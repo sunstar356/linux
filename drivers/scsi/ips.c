@@ -206,10 +206,6 @@ module_param(ips, charp, 0);
 #define IPS_VERSION_HIGH        IPS_VER_MAJOR_STRING "." IPS_VER_MINOR_STRING
 #define IPS_VERSION_LOW         "." IPS_VER_BUILD_STRING " "
 
-#if !defined(__i386__) && !defined(__ia64__) && !defined(__x86_64__)
-#warning "This driver has only been tested on the x86/ia64/x86_64 platforms"
-#endif
-
 #define IPS_DMA_DIR(scb) ((!scb->scsi_cmd || ips_is_passthru(scb->scsi_cmd) || \
                          DMA_NONE == scb->scsi_cmd->sc_data_direction) ? \
                          PCI_DMA_BIDIRECTIONAL : \
@@ -2245,9 +2241,6 @@ ips_get_bios_version(ips_ha_t * ha, int intr)
 	uint8_t minor;
 	uint8_t subminor;
 	uint8_t *buffer;
-	char hexDigits[] =
-	    { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C',
-     'D', 'E', 'F' };
 
 	METHOD_TRACE("ips_get_bios_version", 1);
 
@@ -2378,13 +2371,13 @@ ips_get_bios_version(ips_ha_t * ha, int intr)
 		}
 	}
 
-	ha->bios_version[0] = hexDigits[(major & 0xF0) >> 4];
+	ha->bios_version[0] = hex_asc_upper_hi(major);
 	ha->bios_version[1] = '.';
-	ha->bios_version[2] = hexDigits[major & 0x0F];
-	ha->bios_version[3] = hexDigits[subminor];
+	ha->bios_version[2] = hex_asc_upper_lo(major);
+	ha->bios_version[3] = hex_asc_upper_lo(subminor);
 	ha->bios_version[4] = '.';
-	ha->bios_version[5] = hexDigits[(minor & 0xF0) >> 4];
-	ha->bios_version[6] = hexDigits[minor & 0x0F];
+	ha->bios_version[5] = hex_asc_upper_hi(minor);
+	ha->bios_version[6] = hex_asc_upper_lo(minor);
 	ha->bios_version[7] = 0;
 }
 
@@ -6788,6 +6781,11 @@ ips_remove_device(struct pci_dev *pci_dev)
 static int __init
 ips_module_init(void)
 {
+#if !defined(__i386__) && !defined(__ia64__) && !defined(__x86_64__)
+	printk(KERN_ERR "ips: This driver has only been tested on the x86/ia64/x86_64 platforms\n");
+	add_taint(TAINT_CPU_OUT_OF_SPEC, LOCKDEP_STILL_OK);
+#endif
+
 	if (pci_register_driver(&ips_pci_driver) < 0)
 		return -ENODEV;
 	ips_driver_template.module = THIS_MODULE;

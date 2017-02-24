@@ -1687,14 +1687,14 @@ store_##reg(struct device *dev, struct device_attribute *attr, \
 
 fan_time_functions(fan_stop_time, FAN_STOP_TIME)
 
-static ssize_t show_name(struct device *dev, struct device_attribute *attr,
+static ssize_t name_show(struct device *dev, struct device_attribute *attr,
 			 char *buf)
 {
 	struct w83627ehf_data *data = dev_get_drvdata(dev);
 
 	return sprintf(buf, "%s\n", data->name);
 }
-static DEVICE_ATTR(name, S_IRUGO, show_name, NULL);
+static DEVICE_ATTR_RO(name);
 
 static struct sensor_device_attribute sda_sf3_arrays_fan4[] = {
 	SENSOR_ATTR(pwm4_stop_time, S_IWUSR | S_IRUGO, show_fan_stop_time,
@@ -1754,12 +1754,12 @@ static struct sensor_device_attribute sda_sf3_max_step_arrays[] = {
 };
 
 static ssize_t
-show_vid(struct device *dev, struct device_attribute *attr, char *buf)
+cpu0_vid_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct w83627ehf_data *data = dev_get_drvdata(dev);
 	return sprintf(buf, "%d\n", vid_from_reg(data->vid, data->vrm));
 }
-static DEVICE_ATTR(cpu0_vid, S_IRUGO, show_vid, NULL);
+static DEVICE_ATTR_RO(cpu0_vid);
 
 
 /* Case open detection */
@@ -1937,27 +1937,11 @@ static inline void w83627ehf_init_device(struct w83627ehf_data *data,
 static void w82627ehf_swap_tempreg(struct w83627ehf_data *data,
 				   int r1, int r2)
 {
-	u16 tmp;
-
-	tmp = data->temp_src[r1];
-	data->temp_src[r1] = data->temp_src[r2];
-	data->temp_src[r2] = tmp;
-
-	tmp = data->reg_temp[r1];
-	data->reg_temp[r1] = data->reg_temp[r2];
-	data->reg_temp[r2] = tmp;
-
-	tmp = data->reg_temp_over[r1];
-	data->reg_temp_over[r1] = data->reg_temp_over[r2];
-	data->reg_temp_over[r2] = tmp;
-
-	tmp = data->reg_temp_hyst[r1];
-	data->reg_temp_hyst[r1] = data->reg_temp_hyst[r2];
-	data->reg_temp_hyst[r2] = tmp;
-
-	tmp = data->reg_temp_config[r1];
-	data->reg_temp_config[r1] = data->reg_temp_config[r2];
-	data->reg_temp_config[r2] = tmp;
+	swap(data->temp_src[r1], data->temp_src[r2]);
+	swap(data->reg_temp[r1], data->reg_temp[r2]);
+	swap(data->reg_temp_over[r1], data->reg_temp_over[r2]);
+	swap(data->reg_temp_hyst[r1], data->reg_temp_hyst[r2]);
+	swap(data->reg_temp_config[r1], data->reg_temp_config[r2]);
 }
 
 static void

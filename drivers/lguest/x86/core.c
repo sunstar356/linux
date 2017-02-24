@@ -45,8 +45,8 @@
 #include <asm/desc.h>
 #include <asm/setup.h>
 #include <asm/lguest.h>
-#include <asm/uaccess.h>
-#include <asm/i387.h>
+#include <linux/uaccess.h>
+#include <asm/fpu/internal.h>
 #include <asm/tlbflush.h>
 #include "../lg.h"
 
@@ -247,14 +247,6 @@ unsigned long *lguest_arch_regptr(struct lg_cpu *cpu, size_t reg_off, bool any)
 void lguest_arch_run_guest(struct lg_cpu *cpu)
 {
 	/*
-	 * Remember the awfully-named TS bit?  If the Guest has asked to set it
-	 * we set it now, so we can trap and pass that trap to the Guest if it
-	 * uses the FPU.
-	 */
-	if (cpu->ts && user_has_fpu())
-		stts();
-
-	/*
 	 * SYSENTER is an optimized way of doing system calls.  We can't allow
 	 * it because it always jumps to privilege level 0.  A normal Guest
 	 * won't try it because we don't advertise it in CPUID, but a malicious
@@ -282,10 +274,6 @@ void lguest_arch_run_guest(struct lg_cpu *cpu)
 	 if (boot_cpu_has(X86_FEATURE_SEP))
 		wrmsr(MSR_IA32_SYSENTER_CS, __KERNEL_CS, 0);
 
-	/* Clear the host TS bit if it was set above. */
-	if (cpu->ts && user_has_fpu())
-		clts();
-
 	/*
 	 * If the Guest page faulted, then the cr2 register will tell us the
 	 * bad virtual address.  We have to grab this now, because once we
@@ -297,12 +285,12 @@ void lguest_arch_run_guest(struct lg_cpu *cpu)
 	/*
 	 * Similarly, if we took a trap because the Guest used the FPU,
 	 * we have to restore the FPU it expects to see.
-	 * math_state_restore() may sleep and we may even move off to
+	 * fpu__restore() may sleep and we may even move off to
 	 * a different CPU. So all the critical stuff should be done
 	 * before this.
 	 */
-	else if (cpu->regs->trapnum == 7 && !user_has_fpu())
-		math_state_restore();
+	else if (cpu->regs->trapnum == 7 && !fpregs_active())
+		fpu__restore(&current->thread.fpu);
 }
 
 /*H:130
@@ -421,16 +409,15 @@ void lguest_arch_handle_trap(struct lg_cpu *cpu)
 			kill_guest(cpu, "Writing cr2");
 		break;
 	case 7: /* We've intercepted a Device Not Available fault. */
-		/*
-		 * If the Guest doesn't want to know, we already restored the
-		 * Floating Point Unit, so we just continue without telling it.
-		 */
-		if (!cpu->ts)
-			return;
+		/* No special handling is needed here. */
 		break;
 	case 32 ... 255:
+		/* This might be a syscall. */
+		if (could_be_syscall(cpu->regs->trapnum))
+			break;
+
 		/*
-		 * These values mean a real interrupt occurred, in which case
+		 * Other values mean a real interrupt occurred, in which case
 		 * the Host handler has already been run. We just do a
 		 * friendly check if another process should now be run, then
 		 * return to run the Guest again.
@@ -599,7 +586,7 @@ void __init lguest_arch_host_init(void)
 	 * doing this.
 	 */
 	get_online_cpus();
-	if (cpu_has_pge) { /* We have a broader idea of "global". */
+	if (boot_cpu_has(X86_FEATURE_PGE)) { /* We have a broader idea of "global". */
 		/* Remember that this was originally set (for cleanup). */
 		cpu_had_pge = 1;
 		/*

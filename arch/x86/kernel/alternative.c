@@ -11,6 +11,7 @@
 #include <linux/stop_machine.h>
 #include <linux/slab.h>
 #include <linux/kdebug.h>
+#include <asm/text-patching.h>
 #include <asm/alternative.h>
 #include <asm/sections.h>
 #include <asm/pgtable.h>
@@ -20,6 +21,10 @@
 #include <asm/tlbflush.h>
 #include <asm/io.h>
 #include <asm/fixmap.h>
+
+int __read_mostly alternatives_patched;
+
+EXPORT_SYMBOL_GPL(alternatives_patched);
 
 #define MAX_PATCH_LEN (255-1)
 
@@ -227,6 +232,15 @@ void __init arch_init_ideal_nops(void)
 #endif
 		}
 		break;
+
+	case X86_VENDOR_AMD:
+		if (boot_cpu_data.x86 > 0xf) {
+			ideal_nops = p6_nops;
+			return;
+		}
+
+		/* fall through */
+
 	default:
 #ifdef CONFIG_X86_64
 		ideal_nops = k8_nops;
@@ -323,12 +337,20 @@ done:
 		n_dspl, (unsigned long)orig_insn + n_dspl + repl_len);
 }
 
-static void __init_or_module optimize_nops(struct alt_instr *a, u8 *instr)
+/*
+ * "noinline" to cause control flow change and thus invalidate I$ and
+ * cause refetch after modification.
+ */
+static void __init_or_module noinline optimize_nops(struct alt_instr *a, u8 *instr)
 {
+	unsigned long flags;
+
 	if (instr[0] != 0x90)
 		return;
 
+	local_irq_save(flags);
 	add_nops(instr + (a->instrlen - a->padlen), a->padlen);
+	local_irq_restore(flags);
 
 	DUMP_BYTES(instr, a->instrlen, "%p: [%d:%d) optimized NOPs: ",
 		   instr, a->instrlen - a->padlen, a->padlen);
@@ -340,9 +362,12 @@ static void __init_or_module optimize_nops(struct alt_instr *a, u8 *instr)
  * This implies that asymmetric systems where APs have less capabilities than
  * the boot processor are not handled. Tough. Make sure you disable such
  * features by hand.
+ *
+ * Marked "noinline" to cause control flow change and thus insn cache
+ * to refetch changed I$ lines.
  */
-void __init_or_module apply_alternatives(struct alt_instr *start,
-					 struct alt_instr *end)
+void __init_or_module noinline apply_alternatives(struct alt_instr *start,
+						  struct alt_instr *end)
 {
 	struct alt_instr *a;
 	u8 *instr, *replacement;
@@ -627,6 +652,7 @@ void __init alternative_instructions(void)
 	apply_paravirt(__parainstructions, __parainstructions_end);
 
 	restart_nmi();
+	alternatives_patched = 1;
 }
 
 /**
@@ -647,7 +673,6 @@ void *__init_or_module text_poke_early(void *addr, const void *opcode,
 	unsigned long flags;
 	local_irq_save(flags);
 	memcpy(addr, opcode, len);
-	sync_core();
 	local_irq_restore(flags);
 	/* Could also do a CLFLUSH here to speed up CPU recovery; but
 	   that causes hangs on some VIA CPUs. */

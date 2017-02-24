@@ -22,6 +22,8 @@
 #ifndef IVTV_DRIVER_H
 #define IVTV_DRIVER_H
 
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 /* Internal header for ivtv project:
  * Driver for the cx23415/6 chip.
  * Author: Kevin Thayer (nufan_wfk at yahoo.com)
@@ -36,38 +38,37 @@
  *                using information provided by Jiun-Kuei Jung @ AVerMedia.
  */
 
-#include <linux/module.h>
-#include <linux/init.h>
+#include <asm/byteorder.h>
 #include <linux/delay.h>
-#include <linux/sched.h>
+#include <linux/device.h>
 #include <linux/fs.h>
-#include <linux/pci.h>
-#include <linux/interrupt.h>
-#include <linux/spinlock.h>
 #include <linux/i2c.h>
 #include <linux/i2c-algo-bit.h>
-#include <linux/list.h>
-#include <linux/unistd.h>
-#include <linux/pagemap.h>
-#include <linux/scatterlist.h>
+#include <linux/init.h>
+#include <linux/interrupt.h>
+#include <linux/ivtv.h>
+#include <linux/kernel.h>
 #include <linux/kthread.h>
+#include <linux/list.h>
+#include <linux/module.h>
 #include <linux/mutex.h>
+#include <linux/pagemap.h>
+#include <linux/pci.h>
+#include <linux/scatterlist.h>
+#include <linux/sched.h>
 #include <linux/slab.h>
-#include <asm/uaccess.h>
-#include <asm/byteorder.h>
+#include <linux/spinlock.h>
+#include <linux/uaccess.h>
+#include <linux/unistd.h>
 
-#include <linux/dvb/video.h>
-#include <linux/dvb/audio.h>
+#include <media/drv-intf/cx2341x.h>
+#include <media/i2c/ir-kbd-i2c.h>
+#include <media/tuner.h>
 #include <media/v4l2-common.h>
-#include <media/v4l2-ioctl.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-fh.h>
-#include <media/tuner.h>
-#include <media/cx2341x.h>
-#include <media/ir-kbd-i2c.h>
-
-#include <linux/ivtv.h>
+#include <media/v4l2-ioctl.h>
 
 /* Memory layout */
 #define IVTV_ENCODER_OFFSET	0x00000000
@@ -827,11 +828,7 @@ static inline int ivtv_raw_vbi(const struct ivtv *itv)
 /* Call the specified callback for all subdevs matching hw (if 0, then
    match them all). Ignore any errors. */
 #define ivtv_call_hw(itv, hw, o, f, args...) 				\
-	do {								\
-		struct v4l2_subdev *__sd;				\
-		__v4l2_device_call_subdevs_p(&(itv)->v4l2_dev, __sd,	\
-			!(hw) || (__sd->grp_id & (hw)), o, f , ##args);	\
-	} while (0)
+	v4l2_device_mask_call_all(&(itv)->v4l2_dev, hw, o, f, ##args)
 
 #define ivtv_call_all(itv, o, f, args...) ivtv_call_hw(itv, 0, o, f , ##args)
 
@@ -839,11 +836,7 @@ static inline int ivtv_raw_vbi(const struct ivtv *itv)
    match them all). If the callback returns an error other than 0 or
    -ENOIOCTLCMD, then return with that error code. */
 #define ivtv_call_hw_err(itv, hw, o, f, args...)			\
-({									\
-	struct v4l2_subdev *__sd;					\
-	__v4l2_device_call_subdevs_until_err_p(&(itv)->v4l2_dev, __sd,	\
-		!(hw) || (__sd->grp_id & (hw)), o, f , ##args);		\
-})
+	v4l2_device_mask_call_until_err(&(itv)->v4l2_dev, hw, o, f, ##args)
 
 #define ivtv_call_all_err(itv, o, f, args...) ivtv_call_hw_err(itv, 0, o, f , ##args)
 

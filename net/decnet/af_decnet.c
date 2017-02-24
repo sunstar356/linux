@@ -468,10 +468,10 @@ static struct proto dn_proto = {
 	.obj_size		= sizeof(struct dn_sock),
 };
 
-static struct sock *dn_alloc_sock(struct net *net, struct socket *sock, gfp_t gfp)
+static struct sock *dn_alloc_sock(struct net *net, struct socket *sock, gfp_t gfp, int kern)
 {
 	struct dn_scp *scp;
-	struct sock *sk = sk_alloc(net, PF_DECnet, gfp, &dn_proto);
+	struct sock *sk = sk_alloc(net, PF_DECnet, gfp, &dn_proto, kern);
 
 	if  (!sk)
 		goto out;
@@ -678,6 +678,9 @@ static int dn_create(struct net *net, struct socket *sock, int protocol,
 {
 	struct sock *sk;
 
+	if (protocol < 0 || protocol > SK_PROTOCOL_MAX)
+		return -EINVAL;
+
 	if (!net_eq(net, &init_net))
 		return -EAFNOSUPPORT;
 
@@ -693,7 +696,7 @@ static int dn_create(struct net *net, struct socket *sock, int protocol,
 	}
 
 
-	if ((sk = dn_alloc_sock(net, sock, GFP_KERNEL)) == NULL)
+	if ((sk = dn_alloc_sock(net, sock, GFP_KERNEL, kern)) == NULL)
 		return -ENOBUFS;
 
 	sk->sk_protocol = protocol;
@@ -1096,7 +1099,7 @@ static int dn_accept(struct socket *sock, struct socket *newsock, int flags)
 
 	cb = DN_SKB_CB(skb);
 	sk->sk_ack_backlog--;
-	newsk = dn_alloc_sock(sock_net(sk), newsock, sk->sk_allocation);
+	newsk = dn_alloc_sock(sock_net(sk), newsock, sk->sk_allocation, 0);
 	if (newsk == NULL) {
 		release_sock(sk);
 		kfree_skb(skb);
@@ -1715,7 +1718,7 @@ static int dn_recvmsg(struct socket *sock, struct msghdr *msg, size_t size,
 	 * See if there is data ready to read, sleep if there isn't
 	 */
 	for(;;) {
-		DEFINE_WAIT(wait);
+		DEFINE_WAIT_FUNC(wait, woken_wake_function);
 
 		if (sk->sk_err)
 			goto out;
@@ -1746,11 +1749,11 @@ static int dn_recvmsg(struct socket *sock, struct msghdr *msg, size_t size,
 			goto out;
 		}
 
-		prepare_to_wait(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
-		set_bit(SOCK_ASYNC_WAITDATA, &sk->sk_socket->flags);
-		sk_wait_event(sk, &timeo, dn_data_ready(sk, queue, flags, target));
-		clear_bit(SOCK_ASYNC_WAITDATA, &sk->sk_socket->flags);
-		finish_wait(sk_sleep(sk), &wait);
+		add_wait_queue(sk_sleep(sk), &wait);
+		sk_set_bit(SOCKWQ_ASYNC_WAITDATA, sk);
+		sk_wait_event(sk, &timeo, dn_data_ready(sk, queue, flags, target), &wait);
+		sk_clear_bit(SOCKWQ_ASYNC_WAITDATA, sk);
+		remove_wait_queue(sk_sleep(sk), &wait);
 	}
 
 	skb_queue_walk_safe(queue, skb, n) {
@@ -1996,19 +1999,19 @@ static int dn_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 		 * size.
 		 */
 		if (dn_queue_too_long(scp, queue, flags)) {
-			DEFINE_WAIT(wait);
+			DEFINE_WAIT_FUNC(wait, woken_wake_function);
 
 			if (flags & MSG_DONTWAIT) {
 				err = -EWOULDBLOCK;
 				goto out;
 			}
 
-			prepare_to_wait(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
-			set_bit(SOCK_ASYNC_WAITDATA, &sk->sk_socket->flags);
+			add_wait_queue(sk_sleep(sk), &wait);
+			sk_set_bit(SOCKWQ_ASYNC_WAITDATA, sk);
 			sk_wait_event(sk, &timeo,
-				      !dn_queue_too_long(scp, queue, flags));
-			clear_bit(SOCK_ASYNC_WAITDATA, &sk->sk_socket->flags);
-			finish_wait(sk_sleep(sk), &wait);
+				      !dn_queue_too_long(scp, queue, flags), &wait);
+			sk_clear_bit(SOCKWQ_ASYNC_WAITDATA, sk);
+			remove_wait_queue(sk_sleep(sk), &wait);
 			continue;
 		}
 

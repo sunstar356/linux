@@ -10,17 +10,19 @@
 /dts-v1/;
 
 #include "bcm47081.dtsi"
+#include "bcm5301x-nand-cs0-bch8.dtsi"
 
 / {
 	compatible = "buffalo,wzr-600dhp2", "brcm,bcm47081", "brcm,bcm4708";
 	model = "Buffalo WZR-600DHP2 (BCM47081)";
 
 	chosen {
-		bootargs = "console=ttyS0,115200";
+		bootargs = "console=ttyS0,115200 earlycon";
 	};
 
 	memory {
-		reg = <0x00000000 0x08000000>;
+		reg = <0x00000000 0x08000000
+		       0x88000000 0x08000000>;
 	};
 
 	spi {

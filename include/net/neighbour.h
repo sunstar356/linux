@@ -125,6 +125,7 @@ struct neigh_statistics {
 	unsigned long forced_gc_runs;	/* number of forced GC runs */
 
 	unsigned long unres_discards;	/* number of unresolved drops */
+	unsigned long table_fulls;      /* times even gc couldn't help */
 };
 
 #define NEIGH_CACHE_STAT_INC(tbl, field) this_cpu_inc((tbl)->stats->field)
@@ -465,6 +466,16 @@ static inline int neigh_hh_output(const struct hh_cache *hh, struct sk_buff *skb
 
 	skb_push(skb, hh_len);
 	return dev_queue_xmit(skb);
+}
+
+static inline int neigh_output(struct neighbour *n, struct sk_buff *skb)
+{
+	const struct hh_cache *hh = &n->hh;
+
+	if ((n->nud_state & NUD_CONNECTED) && hh->hh_len)
+		return neigh_hh_output(hh, skb);
+	else
+		return n->output(n, skb);
 }
 
 static inline struct neighbour *

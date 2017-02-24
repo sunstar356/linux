@@ -92,6 +92,7 @@ enum qeth_ipa_cmds {
 	IPA_CMD_DELGMAC			= 0x24,
 	IPA_CMD_SETVLAN			= 0x25,
 	IPA_CMD_DELVLAN			= 0x26,
+	IPA_CMD_SETBRIDGEPORT_OSA	= 0x2b,
 	IPA_CMD_SETCCID			= 0x41,
 	IPA_CMD_DELCCID			= 0x42,
 	IPA_CMD_MODCCID			= 0x43,
@@ -104,7 +105,7 @@ enum qeth_ipa_cmds {
 	IPA_CMD_DELIP			= 0xb7,
 	IPA_CMD_SETADAPTERPARMS		= 0xb8,
 	IPA_CMD_SET_DIAG_ASS		= 0xb9,
-	IPA_CMD_SETBRIDGEPORT		= 0xbe,
+	IPA_CMD_SETBRIDGEPORT_IQD	= 0xbe,
 	IPA_CMD_CREATE_ADDR		= 0xc3,
 	IPA_CMD_DESTROY_ADDR		= 0xc4,
 	IPA_CMD_REGISTER_LOCAL_ADDR	= 0xd1,
@@ -351,11 +352,28 @@ struct qeth_arp_query_info {
 	char *udata;
 };
 
+/* IPA set assist segmentation bit definitions for receive and
+ * transmit checksum offloading.
+ */
+enum qeth_ipa_checksum_bits {
+	QETH_IPA_CHECKSUM_IP_HDR	= 0x0002,
+	QETH_IPA_CHECKSUM_UDP		= 0x0008,
+	QETH_IPA_CHECKSUM_TCP		= 0x0010,
+	QETH_IPA_CHECKSUM_LP2LP		= 0x0020
+};
+
+/* IPA Assist checksum offload reply layout. */
+struct qeth_checksum_cmd {
+	__u32 supported;
+	__u32 enabled;
+} __packed;
+
 /* SETASSPARMS IPA Command: */
 struct qeth_ipacmd_setassparms {
 	struct qeth_ipacmd_setassparms_hdr hdr;
 	union {
 		__u32 flags_32bit;
+		struct qeth_checksum_cmd chksum;
 		struct qeth_arp_cache_entry add_arp_entry;
 		struct qeth_arp_query_data query_arp;
 		__u8 ip[16];

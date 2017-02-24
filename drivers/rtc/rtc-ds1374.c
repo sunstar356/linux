@@ -89,10 +89,8 @@ static int ds1374_read_rtc(struct i2c_client *client, u32 *time,
 	int ret;
 	int i;
 
-	if (nbytes > 4) {
-		WARN_ON(1);
+	if (WARN_ON(nbytes > 4))
 		return -EINVAL;
-	}
 
 	ret = i2c_smbus_read_i2c_block_data(client, reg, nbytes, buf);
 
@@ -664,11 +662,8 @@ static int ds1374_remove(struct i2c_client *client)
 {
 	struct ds1374 *ds1374 = i2c_get_clientdata(client);
 #ifdef CONFIG_RTC_DRV_DS1374_WDT
-	int res;
-
-	res = misc_deregister(&ds1374_miscdev);
-	if (!res)
-		ds1374_miscdev.parent = NULL;
+	misc_deregister(&ds1374_miscdev);
+	ds1374_miscdev.parent = NULL;
 	unregister_reboot_notifier(&ds1374_wdt_notifier);
 #endif
 
@@ -689,7 +684,7 @@ static int ds1374_suspend(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
 
-	if (client->irq >= 0 && device_may_wakeup(&client->dev))
+	if (client->irq > 0 && device_may_wakeup(&client->dev))
 		enable_irq_wake(client->irq);
 	return 0;
 }
@@ -698,7 +693,7 @@ static int ds1374_resume(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
 
-	if (client->irq >= 0 && device_may_wakeup(&client->dev))
+	if (client->irq > 0 && device_may_wakeup(&client->dev))
 		disable_irq_wake(client->irq);
 	return 0;
 }
@@ -709,7 +704,6 @@ static SIMPLE_DEV_PM_OPS(ds1374_pm, ds1374_suspend, ds1374_resume);
 static struct i2c_driver ds1374_driver = {
 	.driver = {
 		.name = "rtc-ds1374",
-		.owner = THIS_MODULE,
 		.pm = &ds1374_pm,
 	},
 	.probe = ds1374_probe,

@@ -26,7 +26,7 @@
 #define node(root, dir) ((root)->nl_entry.dir == &mm->nodes) ? NULL :          \
 	list_entry((root)->nl_entry.dir, struct nvkm_mm_node, nl_entry)
 
-static void
+void
 nvkm_mm_dump(struct nvkm_mm *mm, const char *header)
 {
 	struct nvkm_mm_node *node;
@@ -147,6 +147,7 @@ nvkm_mm_head(struct nvkm_mm *mm, u8 heap, u8 type, u32 size_max, u32 size_min,
 		if (!this)
 			return -ENOMEM;
 
+		this->next = NULL;
 		this->type = type;
 		list_del(&this->fl_entry);
 		*pnode = this;
@@ -225,6 +226,7 @@ nvkm_mm_tail(struct nvkm_mm *mm, u8 heap, u8 type, u32 size_max, u32 size_min,
 		if (!this)
 			return -ENOMEM;
 
+		this->next = NULL;
 		this->type = type;
 		list_del(&this->fl_entry);
 		*pnode = this;

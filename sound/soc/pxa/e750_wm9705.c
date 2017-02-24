@@ -22,9 +22,6 @@
 
 #include <asm/mach-types.h>
 
-#include "../codecs/wm9705.h"
-#include "pxa2xx-ac97.h"
-
 static int e750_spk_amp_event(struct snd_soc_dapm_widget *w,
 				struct snd_kcontrol *kcontrol, int event)
 {
@@ -120,7 +117,7 @@ static int e750_probe(struct platform_device *pdev)
 
 	card->dev = &pdev->dev;
 
-	ret = snd_soc_register_card(card);
+	ret = devm_snd_soc_register_card(&pdev->dev, card);
 	if (ret) {
 		dev_err(&pdev->dev, "snd_soc_register_card() failed: %d\n",
 			ret);
@@ -131,10 +128,7 @@ static int e750_probe(struct platform_device *pdev)
 
 static int e750_remove(struct platform_device *pdev)
 {
-	struct snd_soc_card *card = platform_get_drvdata(pdev);
-
 	gpio_free_array(e750_audio_gpios, ARRAY_SIZE(e750_audio_gpios));
-	snd_soc_unregister_card(card);
 	return 0;
 }
 

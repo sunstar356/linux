@@ -128,7 +128,10 @@ struct inode *ubifs_iget(struct super_block *sb, unsigned long inum)
 	if (err)
 		goto out_ino;
 
-	inode->i_flags |= (S_NOCMTIME | S_NOATIME);
+	inode->i_flags |= S_NOCMTIME;
+#ifndef CONFIG_UBIFS_ATIME_SUPPORT
+	inode->i_flags |= S_NOATIME;
+#endif
 	set_nlink(inode, le32_to_cpu(ino->nlink));
 	i_uid_write(inode, le32_to_cpu(ino->uid));
 	i_gid_write(inode, le32_to_cpu(ino->gid));
@@ -376,6 +379,9 @@ out:
 	}
 done:
 	clear_inode(inode);
+#ifdef CONFIG_UBIFS_FS_ENCRYPTION
+	fscrypt_put_encryption_info(inode, NULL);
+#endif
 }
 
 static void ubifs_dirty_inode(struct inode *inode, int flags)
@@ -516,19 +522,19 @@ static int init_constants_early(struct ubifs_info *c)
 	c->max_write_shift = fls(c->max_write_size) - 1;
 
 	if (c->leb_size < UBIFS_MIN_LEB_SZ) {
-		ubifs_err(c, "too small LEBs (%d bytes), min. is %d bytes",
-			  c->leb_size, UBIFS_MIN_LEB_SZ);
+		ubifs_errc(c, "too small LEBs (%d bytes), min. is %d bytes",
+			   c->leb_size, UBIFS_MIN_LEB_SZ);
 		return -EINVAL;
 	}
 
 	if (c->leb_cnt < UBIFS_MIN_LEB_CNT) {
-		ubifs_err(c, "too few LEBs (%d), min. is %d",
-			  c->leb_cnt, UBIFS_MIN_LEB_CNT);
+		ubifs_errc(c, "too few LEBs (%d), min. is %d",
+			   c->leb_cnt, UBIFS_MIN_LEB_CNT);
 		return -EINVAL;
 	}
 
 	if (!is_power_of_2(c->min_io_size)) {
-		ubifs_err(c, "bad min. I/O size %d", c->min_io_size);
+		ubifs_errc(c, "bad min. I/O size %d", c->min_io_size);
 		return -EINVAL;
 	}
 
@@ -539,8 +545,8 @@ static int init_constants_early(struct ubifs_info *c)
 	if (c->max_write_size < c->min_io_size ||
 	    c->max_write_size % c->min_io_size ||
 	    !is_power_of_2(c->max_write_size)) {
-		ubifs_err(c, "bad write buffer size %d for %d min. I/O unit",
-			  c->max_write_size, c->min_io_size);
+		ubifs_errc(c, "bad write buffer size %d for %d min. I/O unit",
+			   c->max_write_size, c->min_io_size);
 		return -EINVAL;
 	}
 
@@ -1203,7 +1209,8 @@ static int mount_ubifs(struct ubifs_info *c)
 		bu_init(c);
 
 	if (!c->ro_mount) {
-		c->write_reserve_buf = kmalloc(COMPRESSED_DATA_NODE_BUF_SZ,
+		c->write_reserve_buf = kmalloc(COMPRESSED_DATA_NODE_BUF_SZ + \
+					       UBIFS_CIPHER_BLOCK_SIZE,
 					       GFP_KERNEL);
 		if (!c->write_reserve_buf)
 			goto out_free;
@@ -1616,7 +1623,8 @@ static int ubifs_remount_rw(struct ubifs_info *c)
 		goto out;
 	}
 
-	c->write_reserve_buf = kmalloc(COMPRESSED_DATA_NODE_BUF_SZ, GFP_KERNEL);
+	c->write_reserve_buf = kmalloc(COMPRESSED_DATA_NODE_BUF_SZ + \
+				       UBIFS_CIPHER_BLOCK_SIZE, GFP_KERNEL);
 	if (!c->write_reserve_buf) {
 		err = -ENOMEM;
 		goto out;
@@ -1991,6 +1999,12 @@ static struct ubifs_info *alloc_ubifs_info(struct ubi_volume_desc *ubi)
 	return c;
 }
 
+#ifndef CONFIG_UBIFS_FS_ENCRYPTION
+const struct fscrypt_operations ubifs_crypt_operations = {
+	.is_encrypted		= __ubifs_crypt_is_encrypted,
+};
+#endif
+
 static int ubifs_fill_super(struct super_block *sb, void *data, int silent)
 {
 	struct ubifs_info *c = sb->s_fs_info;
@@ -2037,6 +2051,7 @@ static int ubifs_fill_super(struct super_block *sb, void *data, int silent)
 		sb->s_maxbytes = c->max_inode_sz = MAX_LFS_FILESIZE;
 	sb->s_op = &ubifs_super_operations;
 	sb->s_xattr = ubifs_xattr_handlers;
+	sb->s_cop = &ubifs_crypt_operations;
 
 	mutex_lock(&c->umount_mutex);
 	err = mount_ubifs(c);
@@ -2104,8 +2119,9 @@ static struct dentry *ubifs_mount(struct file_system_type *fs_type, int flags,
 	 */
 	ubi = open_ubi(name, UBI_READONLY);
 	if (IS_ERR(ubi)) {
-		pr_err("UBIFS error (pid: %d): cannot open \"%s\", error %d",
-		       current->pid, name, (int)PTR_ERR(ubi));
+		if (!(flags & MS_SILENT))
+			pr_err("UBIFS error (pid: %d): cannot open \"%s\", error %d",
+			       current->pid, name, (int)PTR_ERR(ubi));
 		return ERR_CAST(ubi);
 	}
 
@@ -2138,7 +2154,12 @@ static struct dentry *ubifs_mount(struct file_system_type *fs_type, int flags,
 		if (err)
 			goto out_deact;
 		/* We do not support atime */
-		sb->s_flags |= MS_ACTIVE | MS_NOATIME;
+		sb->s_flags |= MS_ACTIVE;
+#ifndef CONFIG_UBIFS_ATIME_SUPPORT
+		sb->s_flags |= MS_NOATIME;
+#else
+		ubifs_msg(c, "full atime support is enabled.");
+#endif
 	}
 
 	/* 'fill_super()' opens ubi again so we must close it here */
@@ -2229,23 +2250,25 @@ static int __init ubifs_init(void)
 	BUILD_BUG_ON(UBIFS_COMPR_TYPES_CNT > 4);
 
 	/*
-	 * We require that PAGE_CACHE_SIZE is greater-than-or-equal-to
+	 * We require that PAGE_SIZE is greater-than-or-equal-to
 	 * UBIFS_BLOCK_SIZE. It is assumed that both are powers of 2.
 	 */
-	if (PAGE_CACHE_SIZE < UBIFS_BLOCK_SIZE) {
+	if (PAGE_SIZE < UBIFS_BLOCK_SIZE) {
 		pr_err("UBIFS error (pid %d): VFS page cache size is %u bytes, but UBIFS requires at least 4096 bytes",
-		       current->pid, (unsigned int)PAGE_CACHE_SIZE);
+		       current->pid, (unsigned int)PAGE_SIZE);
 		return -EINVAL;
 	}
 
 	ubifs_inode_slab = kmem_cache_create("ubifs_inode_slab",
 				sizeof(struct ubifs_inode), 0,
-				SLAB_MEM_SPREAD | SLAB_RECLAIM_ACCOUNT,
-				&inode_slab_ctor);
+				SLAB_MEM_SPREAD | SLAB_RECLAIM_ACCOUNT |
+				SLAB_ACCOUNT, &inode_slab_ctor);
 	if (!ubifs_inode_slab)
 		return -ENOMEM;
 
-	register_shrinker(&ubifs_shrinker_info);
+	err = register_shrinker(&ubifs_shrinker_info);
+	if (err)
+		goto out_slab;
 
 	err = ubifs_compressors_init();
 	if (err)
@@ -2269,6 +2292,7 @@ out_compr:
 	ubifs_compressors_exit();
 out_shrinker:
 	unregister_shrinker(&ubifs_shrinker_info);
+out_slab:
 	kmem_cache_destroy(ubifs_inode_slab);
 	return err;
 }

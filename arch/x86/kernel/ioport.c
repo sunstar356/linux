@@ -16,6 +16,7 @@
 #include <linux/syscalls.h>
 #include <linux/bitmap.h>
 #include <asm/syscalls.h>
+#include <asm/desc.h>
 
 /*
  * this changes the io permissions bitmap in the current task.
@@ -45,6 +46,10 @@ asmlinkage long sys_ioperm(unsigned long from, unsigned long num, int turn_on)
 		memset(bitmap, 0xff, IO_BITMAP_BYTES);
 		t->io_bitmap_ptr = bitmap;
 		set_thread_flag(TIF_IO_BITMAP);
+
+		preempt_disable();
+		refresh_TR();
+		preempt_enable();
 	}
 
 	/*
@@ -96,8 +101,13 @@ asmlinkage long sys_ioperm(unsigned long from, unsigned long num, int turn_on)
 SYSCALL_DEFINE1(iopl, unsigned int, level)
 {
 	struct pt_regs *regs = current_pt_regs();
-	unsigned int old = (regs->flags >> 12) & 3;
 	struct thread_struct *t = &current->thread;
+
+	/*
+	 * Careful: the IOPL bits in regs->flags are undefined under Xen PV
+	 * and changing them has no effect.
+	 */
+	unsigned int old = t->iopl >> X86_EFLAGS_IOPL_BIT;
 
 	if (level > 3)
 		return -EINVAL;
@@ -106,8 +116,9 @@ SYSCALL_DEFINE1(iopl, unsigned int, level)
 		if (!capable(CAP_SYS_RAWIO))
 			return -EPERM;
 	}
-	regs->flags = (regs->flags & ~X86_EFLAGS_IOPL) | (level << 12);
-	t->iopl = level << 12;
+	regs->flags = (regs->flags & ~X86_EFLAGS_IOPL) |
+		(level << X86_EFLAGS_IOPL_BIT);
+	t->iopl = level << X86_EFLAGS_IOPL_BIT;
 	set_iopl_mask(t->iopl);
 
 	return 0;

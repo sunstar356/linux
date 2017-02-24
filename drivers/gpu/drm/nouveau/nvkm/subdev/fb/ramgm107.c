@@ -21,35 +21,10 @@
  *
  * Authors: Ben Skeggs
  */
-#include "gf100.h"
+#include "ram.h"
 
-struct gm107_ram {
-	struct nvkm_ram base;
-};
-
-static int
-gm107_ram_ctor(struct nvkm_object *parent, struct nvkm_object *engine,
-	       struct nvkm_oclass *oclass, void *data, u32 size,
-	       struct nvkm_object **pobject)
+int
+gm107_ram_new(struct nvkm_fb *fb, struct nvkm_ram **pram)
 {
-	struct gm107_ram *ram;
-	int ret;
-
-	ret = gf100_ram_create(parent, engine, oclass, 0x021c14, &ram);
-	*pobject = nv_object(ram);
-	if (ret)
-		return ret;
-
-	return 0;
+	return gk104_ram_ctor(fb, pram, 0x021c14);
 }
-
-struct nvkm_oclass
-gm107_ram_oclass = {
-	.handle = 0,
-	.ofuncs = &(struct nvkm_ofuncs) {
-		.ctor = gm107_ram_ctor,
-		.dtor = _nvkm_ram_dtor,
-		.init = gk104_ram_init,
-		.fini = _nvkm_ram_fini,
-	}
-};

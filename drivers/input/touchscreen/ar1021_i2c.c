@@ -127,7 +127,6 @@ static int ar1021_i2c_probe(struct i2c_client *client,
 		return error;
 	}
 
-	i2c_set_clientdata(client, ar1021);
 	return 0;
 }
 
@@ -166,7 +165,6 @@ MODULE_DEVICE_TABLE(of, ar1021_i2c_of_match);
 static struct i2c_driver ar1021_i2c_driver = {
 	.driver	= {
 		.name	= "ar1021_i2c",
-		.owner	= THIS_MODULE,
 		.pm	= &ar1021_i2c_pm,
 		.of_match_table = ar1021_i2c_of_match,
 	},

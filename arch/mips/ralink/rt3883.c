@@ -7,12 +7,11 @@
  *
  * Copyright (C) 2008 Imre Kaloz <kaloz@openwrt.org>
  * Copyright (C) 2008-2011 Gabor Juhos <juhosg@openwrt.org>
- * Copyright (C) 2013 John Crispin <blogic@openwrt.org>
+ * Copyright (C) 2013 John Crispin <john@phrozen.org>
  */
 
 #include <linux/kernel.h>
 #include <linux/init.h>
-#include <linux/module.h>
 
 #include <asm/mipsregs.h>
 #include <asm/mach-ralink/ralink_regs.h>
@@ -63,16 +62,6 @@ static struct rt2880_pmx_group rt3883_pinmux_data[] = {
 	{ 0 }
 };
 
-static void rt3883_wdt_reset(void)
-{
-	u32 t;
-
-	/* enable WDT reset output on GPIO 2 */
-	t = rt_sysc_r32(RT3883_SYSC_REG_SYSCFG1);
-	t |= RT3883_SYSCFG1_GPIO2_AS_WDT_OUT;
-	rt_sysc_w32(t, RT3883_SYSC_REG_SYSCFG1);
-}
-
 void __init ralink_clk_init(void)
 {
 	unsigned long cpu_rate, sys_rate;
@@ -108,7 +97,10 @@ void __init ralink_clk_init(void)
 	ralink_clk_add("10000100.timer", sys_rate);
 	ralink_clk_add("10000120.watchdog", sys_rate);
 	ralink_clk_add("10000500.uart", 40000000);
+	ralink_clk_add("10000900.i2c", 40000000);
+	ralink_clk_add("10000a00.i2s", 40000000);
 	ralink_clk_add("10000b00.spi", sys_rate);
+	ralink_clk_add("10000b40.spi", sys_rate);
 	ralink_clk_add("10000c00.uartlite", 40000000);
 	ralink_clk_add("10100000.ethernet", sys_rate);
 	ralink_clk_add("10180000.wmac", 40000000);
@@ -153,4 +145,6 @@ void prom_soc_init(struct ralink_soc_info *soc_info)
 	soc_info->mem_size_max = RT3883_MEM_SIZE_MAX;
 
 	rt2880_pinmux_data = rt3883_pinmux_data;
+
+	ralink_soc = RT3883_SOC;
 }

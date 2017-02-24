@@ -21,6 +21,7 @@
 #include <linux/seq_file.h>
 #include <linux/module.h>
 #include <linux/slab.h>
+#include <trace/events/block.h>
 #include "md.h"
 #include "linear.h"
 
@@ -52,48 +53,6 @@ static inline struct dev_info *which_dev(struct mddev *mddev, sector_t sector)
 	return conf->disks + lo;
 }
 
-/**
- *	linear_mergeable_bvec -- tell bio layer if two requests can be merged
- *	@q: request queue
- *	@bvm: properties of new bio
- *	@biovec: the request that could be merged to it.
- *
- *	Return amount of bytes we can take at this offset
- */
-static int linear_mergeable_bvec(struct mddev *mddev,
-				 struct bvec_merge_data *bvm,
-				 struct bio_vec *biovec)
-{
-	struct dev_info *dev0;
-	unsigned long maxsectors, bio_sectors = bvm->bi_size >> 9;
-	sector_t sector = bvm->bi_sector + get_start_sect(bvm->bi_bdev);
-	int maxbytes = biovec->bv_len;
-	struct request_queue *subq;
-
-	dev0 = which_dev(mddev, sector);
-	maxsectors = dev0->end_sector - sector;
-	subq = bdev_get_queue(dev0->rdev->bdev);
-	if (subq->merge_bvec_fn) {
-		bvm->bi_bdev = dev0->rdev->bdev;
-		bvm->bi_sector -= dev0->end_sector - dev0->rdev->sectors;
-		maxbytes = min(maxbytes, subq->merge_bvec_fn(subq, bvm,
-							     biovec));
-	}
-
-	if (maxsectors < bio_sectors)
-		maxsectors = 0;
-	else
-		maxsectors -= bio_sectors;
-
-	if (maxsectors <= (PAGE_SIZE >> 9 ) && bio_sectors == 0)
-		return maxbytes;
-
-	if (maxsectors > (maxbytes >> 9))
-		return maxbytes;
-	else
-		return maxsectors << 9;
-}
-
 static int linear_congested(struct mddev *mddev, int bits)
 {
 	struct linear_conf *conf;
@@ -103,7 +62,7 @@ static int linear_congested(struct mddev *mddev, int bits)
 
 	for (i = 0; i < mddev->raid_disks && !ret ; i++) {
 		struct request_queue *q = bdev_get_queue(conf->disks[i].rdev->bdev);
-		ret |= bdi_congested(&q->backing_dev_info, bits);
+		ret |= bdi_congested(q->backing_dev_info, bits);
 	}
 
 	return ret;
@@ -143,8 +102,8 @@ static struct linear_conf *linear_conf(struct mddev *mddev, int raid_disks)
 		sector_t sectors;
 
 		if (j < 0 || j >= raid_disks || disk->rdev) {
-			printk(KERN_ERR "md/linear:%s: disk numbering problem. Aborting!\n",
-			       mdname(mddev));
+			pr_warn("md/linear:%s: disk numbering problem. Aborting!\n",
+				mdname(mddev));
 			goto out;
 		}
 
@@ -165,8 +124,8 @@ static struct linear_conf *linear_conf(struct mddev *mddev, int raid_disks)
 			discard_supported = true;
 	}
 	if (cnt != raid_disks) {
-		printk(KERN_ERR "md/linear:%s: not enough drives present. Aborting!\n",
-		       mdname(mddev));
+		pr_warn("md/linear:%s: not enough drives present. Aborting!\n",
+			mdname(mddev));
 		goto out;
 	}
 
@@ -263,28 +222,28 @@ static void linear_make_request(struct mddev *mddev, struct bio *bio)
 	struct bio *split;
 	sector_t start_sector, end_sector, data_offset;
 
-	if (unlikely(bio->bi_rw & REQ_FLUSH)) {
+	if (unlikely(bio->bi_opf & REQ_PREFLUSH)) {
 		md_flush_request(mddev, bio);
 		return;
 	}
 
 	do {
-		tmp_dev = which_dev(mddev, bio->bi_iter.bi_sector);
+		sector_t bio_sector = bio->bi_iter.bi_sector;
+		tmp_dev = which_dev(mddev, bio_sector);
 		start_sector = tmp_dev->end_sector - tmp_dev->rdev->sectors;
 		end_sector = tmp_dev->end_sector;
 		data_offset = tmp_dev->rdev->data_offset;
 		bio->bi_bdev = tmp_dev->rdev->bdev;
 
-		if (unlikely(bio->bi_iter.bi_sector >= end_sector ||
-			     bio->bi_iter.bi_sector < start_sector))
+		if (unlikely(bio_sector >= end_sector ||
+			     bio_sector < start_sector))
 			goto out_of_bounds;
 
 		if (unlikely(bio_end_sector(bio) > end_sector)) {
 			/* This bio crosses a device boundary, so we have to
 			 * split it.
 			 */
-			split = bio_split(bio, end_sector -
-					  bio->bi_iter.bi_sector,
+			split = bio_split(bio, end_sector - bio_sector,
 					  GFP_NOIO, fs_bio_set);
 			bio_chain(split, bio);
 		} else {
@@ -294,19 +253,22 @@ static void linear_make_request(struct mddev *mddev, struct bio *bio)
 		split->bi_iter.bi_sector = split->bi_iter.bi_sector -
 			start_sector + data_offset;
 
-		if (unlikely((split->bi_rw & REQ_DISCARD) &&
+		if (unlikely((bio_op(split) == REQ_OP_DISCARD) &&
 			 !blk_queue_discard(bdev_get_queue(split->bi_bdev)))) {
 			/* Just ignore it */
-			bio_endio(split, 0);
-		} else
+			bio_endio(split);
+		} else {
+			if (mddev->gendisk)
+				trace_block_bio_remap(bdev_get_queue(split->bi_bdev),
+						      split, disk_devt(mddev->gendisk),
+						      bio_sector);
 			generic_make_request(split);
+		}
 	} while (split != bio);
 	return;
 
 out_of_bounds:
-	printk(KERN_ERR
-	       "md/linear:%s: make_request: Sector %llu out of bounds on "
-	       "dev %s: %llu sectors, offset %llu\n",
+	pr_err("md/linear:%s: make_request: Sector %llu out of bounds on dev %s: %llu sectors, offset %llu\n",
 	       mdname(mddev),
 	       (unsigned long long)bio->bi_iter.bi_sector,
 	       bdevname(tmp_dev->rdev->bdev, b),
@@ -317,7 +279,6 @@ out_of_bounds:
 
 static void linear_status (struct seq_file *seq, struct mddev *mddev)
 {
-
 	seq_printf(seq, " %dk rounding", mddev->chunk_sectors / 2);
 }
 
@@ -338,7 +299,6 @@ static struct md_personality linear_personality =
 	.size		= linear_size,
 	.quiesce	= linear_quiesce,
 	.congested	= linear_congested,
-	.mergeable_bvec	= linear_mergeable_bvec,
 };
 
 static int __init linear_init (void)

@@ -1,7 +1,15 @@
 #ifndef ISCSI_TARGET_UTIL_H
 #define ISCSI_TARGET_UTIL_H
 
+#include <linux/types.h>
+#include <scsi/iscsi_proto.h>        /* itt_t */
+
 #define MARKER_SIZE	8
+
+struct iscsi_cmd;
+struct iscsi_conn;
+struct iscsi_conn_recovery;
+struct iscsi_session;
 
 extern int iscsit_add_r2t_to_list(struct iscsi_cmd *, u32, u32, int, u32);
 extern struct iscsi_r2t *iscsit_get_r2t_for_eos(struct iscsi_cmd *, u32, u32);
@@ -34,7 +42,6 @@ extern void iscsit_free_cmd(struct iscsi_cmd *, bool);
 extern int iscsit_check_session_usage_count(struct iscsi_session *);
 extern void iscsit_dec_session_usage_count(struct iscsi_session *);
 extern void iscsit_inc_session_usage_count(struct iscsi_session *);
-extern int iscsit_set_sync_and_steering_values(struct iscsi_conn *);
 extern struct iscsi_conn *iscsit_get_conn_from_cid(struct iscsi_session *, u16);
 extern struct iscsi_conn *iscsit_get_conn_from_cid_rcfr(struct iscsi_session *, u16);
 extern void iscsit_check_conn_usage_count(struct iscsi_conn *);

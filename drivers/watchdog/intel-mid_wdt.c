@@ -43,6 +43,7 @@ static inline int wdt_command(int sub, u32 *in, int inlen)
 
 static int wdt_start(struct watchdog_device *wd)
 {
+	struct device *dev = watchdog_get_drvdata(wd);
 	int ret, in_size;
 	int timeout = wd->timeout;
 	struct ipc_wd_start {
@@ -57,36 +58,32 @@ static int wdt_start(struct watchdog_device *wd)
 	in_size = DIV_ROUND_UP(sizeof(ipc_wd_start), 4);
 
 	ret = wdt_command(SCU_WATCHDOG_START, (u32 *)&ipc_wd_start, in_size);
-	if (ret) {
-		struct device *dev = watchdog_get_drvdata(wd);
+	if (ret)
 		dev_crit(dev, "error starting watchdog: %d\n", ret);
-	}
 
 	return ret;
 }
 
 static int wdt_ping(struct watchdog_device *wd)
 {
+	struct device *dev = watchdog_get_drvdata(wd);
 	int ret;
 
 	ret = wdt_command(SCU_WATCHDOG_KEEPALIVE, NULL, 0);
-	if (ret) {
-		struct device *dev = watchdog_get_drvdata(wd);
-		dev_crit(dev, "Error executing keepalive: 0x%x\n", ret);
-	}
+	if (ret)
+		dev_crit(dev, "Error executing keepalive: %d\n", ret);
 
 	return ret;
 }
 
 static int wdt_stop(struct watchdog_device *wd)
 {
+	struct device *dev = watchdog_get_drvdata(wd);
 	int ret;
 
 	ret = wdt_command(SCU_WATCHDOG_STOP, NULL, 0);
-	if (ret) {
-		struct device *dev = watchdog_get_drvdata(wd);
-		dev_crit(dev, "Error stopping watchdog: 0x%x\n", ret);
-	}
+	if (ret)
+		dev_crit(dev, "Error stopping watchdog: %d\n", ret);
 
 	return ret;
 }
@@ -101,7 +98,7 @@ static irqreturn_t mid_wdt_irq(int irq, void *dev_id)
 
 static const struct watchdog_info mid_wdt_info = {
 	.identity = "Intel MID SCU watchdog",
-	.options = WDIOF_KEEPALIVEPING | WDIOF_SETTIMEOUT,
+	.options = WDIOF_KEEPALIVEPING | WDIOF_SETTIMEOUT | WDIOF_MAGICCLOSE,
 };
 
 static const struct watchdog_ops mid_wdt_ops = {
@@ -137,6 +134,7 @@ static int mid_wdt_probe(struct platform_device *pdev)
 	wdt_dev->min_timeout = MID_WDT_TIMEOUT_MIN;
 	wdt_dev->max_timeout = MID_WDT_TIMEOUT_MAX;
 	wdt_dev->timeout = MID_WDT_DEFAULT_TIMEOUT;
+	wdt_dev->parent = &pdev->dev;
 
 	watchdog_set_drvdata(wdt_dev, &pdev->dev);
 	platform_set_drvdata(pdev, wdt_dev);
@@ -149,6 +147,9 @@ static int mid_wdt_probe(struct platform_device *pdev)
 			pdata->irq);
 		return ret;
 	}
+
+	/* Make sure the watchdog is not running */
+	wdt_stop(wdt_dev);
 
 	ret = watchdog_register_device(wdt_dev);
 	if (ret) {

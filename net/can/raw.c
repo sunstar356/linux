@@ -75,7 +75,7 @@ MODULE_ALIAS("can-proto-1");
  */
 
 struct uniqframe {
-	ktime_t tstamp;
+	int skbcnt;
 	const struct sk_buff *skb;
 	unsigned int join_rx_count;
 };
@@ -133,7 +133,7 @@ static void raw_rcv(struct sk_buff *oskb, void *data)
 
 	/* eliminate multiple filter matches for the same skb */
 	if (this_cpu_ptr(ro->uniq)->skb == oskb &&
-	    ktime_equal(this_cpu_ptr(ro->uniq)->tstamp, oskb->tstamp)) {
+	    this_cpu_ptr(ro->uniq)->skbcnt == can_skb_prv(oskb)->skbcnt) {
 		if (ro->join_filters) {
 			this_cpu_inc(ro->uniq->join_rx_count);
 			/* drop frame until all enabled filters matched */
@@ -144,7 +144,7 @@ static void raw_rcv(struct sk_buff *oskb, void *data)
 		}
 	} else {
 		this_cpu_ptr(ro->uniq)->skb = oskb;
-		this_cpu_ptr(ro->uniq)->tstamp = oskb->tstamp;
+		this_cpu_ptr(ro->uniq)->skbcnt = can_skb_prv(oskb)->skbcnt;
 		this_cpu_ptr(ro->uniq)->join_rx_count = 1;
 		/* drop first frame to check all enabled filters? */
 		if (ro->join_filters && ro->count > 1)
@@ -190,7 +190,7 @@ static int raw_enable_filters(struct net_device *dev, struct sock *sk,
 	for (i = 0; i < count; i++) {
 		err = can_rx_register(dev, filter[i].can_id,
 				      filter[i].can_mask,
-				      raw_rcv, sk, "raw");
+				      raw_rcv, sk, "raw", sk);
 		if (err) {
 			/* clean up successfully registered filters */
 			while (--i >= 0)
@@ -211,7 +211,7 @@ static int raw_enable_errfilter(struct net_device *dev, struct sock *sk,
 
 	if (err_mask)
 		err = can_rx_register(dev, 0, err_mask | CAN_ERR_FLAG,
-				      raw_rcv, sk, "raw");
+				      raw_rcv, sk, "raw", sk);
 
 	return err;
 }
@@ -499,6 +499,9 @@ static int raw_setsockopt(struct socket *sock, int level, int optname,
 		if (optlen % sizeof(struct can_filter) != 0)
 			return -EINVAL;
 
+		if (optlen > CAN_RAW_FILTER_MAX * sizeof(struct can_filter))
+			return -EINVAL;
+
 		count = optlen / sizeof(struct can_filter);
 
 		if (count > 1) {
@@ -749,12 +752,13 @@ static int raw_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 
 	can_skb_reserve(skb);
 	can_skb_prv(skb)->ifindex = dev->ifindex;
+	can_skb_prv(skb)->skbcnt = 0;
 
 	err = memcpy_from_msg(skb_put(skb, size), msg, size);
 	if (err < 0)
 		goto free_skb;
 
-	sock_tx_timestamp(sk, &skb_shinfo(skb)->tx_flags);
+	sock_tx_timestamp(sk, sk->sk_tsflags, &skb_shinfo(skb)->tx_flags);
 
 	skb->dev = dev;
 	skb->sk  = sk;

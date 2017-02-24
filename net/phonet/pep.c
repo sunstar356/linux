@@ -845,7 +845,7 @@ static struct sock *pep_sock_accept(struct sock *sk, int flags, int *errp)
 	}
 
 	/* Create a new to-be-accepted sock */
-	newsk = sk_alloc(sock_net(sk), PF_PHONET, GFP_KERNEL, sk->sk_prot);
+	newsk = sk_alloc(sock_net(sk), PF_PHONET, GFP_KERNEL, sk->sk_prot, 0);
 	if (!newsk) {
 		pep_reject_conn(sk, skb, PN_PIPE_ERR_OVERLOAD, GFP_KERNEL);
 		err = -ENOBUFS;
@@ -1167,7 +1167,7 @@ disabled:
 	/* Wait until flow control allows TX */
 	done = atomic_read(&pn->tx_credits);
 	while (!done) {
-		DEFINE_WAIT(wait);
+		DEFINE_WAIT_FUNC(wait, woken_wake_function);
 
 		if (!timeo) {
 			err = -EAGAIN;
@@ -1178,10 +1178,9 @@ disabled:
 			goto out;
 		}
 
-		prepare_to_wait(sk_sleep(sk), &wait,
-				TASK_INTERRUPTIBLE);
-		done = sk_wait_event(sk, &timeo, atomic_read(&pn->tx_credits));
-		finish_wait(sk_sleep(sk), &wait);
+		add_wait_queue(sk_sleep(sk), &wait);
+		done = sk_wait_event(sk, &timeo, atomic_read(&pn->tx_credits), &wait);
+		remove_wait_queue(sk_sleep(sk), &wait);
 
 		if (sk->sk_state != TCP_ESTABLISHED)
 			goto disabled;

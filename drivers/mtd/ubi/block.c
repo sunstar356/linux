@@ -48,6 +48,7 @@
 #include <linux/blk-mq.h>
 #include <linux/hdreg.h>
 #include <linux/scatterlist.h>
+#include <linux/idr.h>
 #include <asm/div64.h>
 
 #include "ubi-media.h"
@@ -161,7 +162,7 @@ static int __init ubiblock_set_param(const char *val,
 	return 0;
 }
 
-static struct kernel_param_ops ubiblock_param_ops = {
+static const struct kernel_param_ops ubiblock_param_ops = {
 	.set    = ubiblock_set_param,
 };
 module_param_cb(block, &ubiblock_param_ops, NULL, 0);
@@ -322,16 +323,15 @@ static int ubiblock_queue_rq(struct blk_mq_hw_ctx *hctx,
 	struct ubiblock *dev = hctx->queue->queuedata;
 	struct ubiblock_pdu *pdu = blk_mq_rq_to_pdu(req);
 
-	if (req->cmd_type != REQ_TYPE_FS)
+	switch (req_op(req)) {
+	case REQ_OP_READ:
+		ubi_sgl_init(&pdu->usgl);
+		queue_work(dev->wq, &pdu->work);
+		return BLK_MQ_RQ_QUEUE_OK;
+	default:
 		return BLK_MQ_RQ_QUEUE_ERROR;
+	}
 
-	if (rq_data_dir(req) != READ)
-		return BLK_MQ_RQ_QUEUE_ERROR; /* Write not implemented */
-
-	ubi_sgl_init(&pdu->usgl);
-	queue_work(dev->wq, &pdu->work);
-
-	return BLK_MQ_RQ_QUEUE_OK;
 }
 
 static int ubiblock_init_request(void *data, struct request *req,
@@ -350,8 +350,9 @@ static int ubiblock_init_request(void *data, struct request *req,
 static struct blk_mq_ops ubiblock_mq_ops = {
 	.queue_rq       = ubiblock_queue_rq,
 	.init_request	= ubiblock_init_request,
-	.map_queue      = blk_mq_map_queue,
 };
+
+static DEFINE_IDR(ubiblock_minor_idr);
 
 int ubiblock_create(struct ubi_volume_info *vi)
 {
@@ -390,7 +391,13 @@ int ubiblock_create(struct ubi_volume_info *vi)
 
 	gd->fops = &ubiblock_ops;
 	gd->major = ubiblock_major;
-	gd->first_minor = dev->ubi_num * UBI_MAX_VOLUMES + dev->vol_id;
+	gd->first_minor = idr_alloc(&ubiblock_minor_idr, dev, 0, 0, GFP_KERNEL);
+	if (gd->first_minor < 0) {
+		dev_err(disk_to_dev(gd),
+			"block: dynamic minor allocation failed");
+		ret = -ENODEV;
+		goto out_put_disk;
+	}
 	gd->private_data = dev;
 	sprintf(gd->disk_name, "ubiblock%d_%d", dev->ubi_num, dev->vol_id);
 	set_capacity(gd, disk_capacity);
@@ -407,7 +414,7 @@ int ubiblock_create(struct ubi_volume_info *vi)
 	ret = blk_mq_alloc_tag_set(&dev->tag_set);
 	if (ret) {
 		dev_err(disk_to_dev(dev->gd), "blk_mq_alloc_tag_set failed");
-		goto out_put_disk;
+		goto out_remove_minor;
 	}
 
 	dev->rq = blk_mq_init_queue(&dev->tag_set);
@@ -445,6 +452,8 @@ out_free_queue:
 	blk_cleanup_queue(dev->rq);
 out_free_tags:
 	blk_mq_free_tag_set(&dev->tag_set);
+out_remove_minor:
+	idr_remove(&ubiblock_minor_idr, gd->first_minor);
 out_put_disk:
 	put_disk(dev->gd);
 out_free_dev:
@@ -463,6 +472,7 @@ static void ubiblock_cleanup(struct ubiblock *dev)
 	blk_cleanup_queue(dev->rq);
 	blk_mq_free_tag_set(&dev->tag_set);
 	dev_info(disk_to_dev(dev->gd), "released");
+	idr_remove(&ubiblock_minor_idr, dev->gd->first_minor);
 	put_disk(dev->gd);
 }
 

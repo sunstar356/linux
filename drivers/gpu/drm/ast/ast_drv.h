@@ -28,6 +28,7 @@
 #ifndef __AST_DRV_H__
 #define __AST_DRV_H__
 
+#include <drm/drm_encoder.h>
 #include <drm/drm_fb_helper.h>
 
 #include <drm/ttm/ttm_bo_api.h>
@@ -113,6 +114,7 @@ struct ast_private {
 	struct ttm_bo_kmap_obj cache_kmap;
 	int next_cursor;
 	bool support_wide_screen;
+	bool DisableP2A;
 
 	enum ast_tx_chip tx_chip_type;
 	u8 dp501_maxclk;
@@ -121,7 +123,7 @@ struct ast_private {
 };
 
 int ast_driver_load(struct drm_device *dev, unsigned long flags);
-int ast_driver_unload(struct drm_device *dev);
+void ast_driver_unload(struct drm_device *dev);
 
 struct ast_gem_object;
 
@@ -256,7 +258,6 @@ struct ast_framebuffer {
 struct ast_fbdev {
 	struct drm_fb_helper helper;
 	struct ast_framebuffer afb;
-	struct list_head fbdev_list;
 	void *sysram;
 	int size;
 	struct ttm_bo_kmap_obj mapping;
@@ -309,12 +310,13 @@ extern void ast_mode_fini(struct drm_device *dev);
 
 int ast_framebuffer_init(struct drm_device *dev,
 			 struct ast_framebuffer *ast_fb,
-			 struct drm_mode_fb_cmd2 *mode_cmd,
+			 const struct drm_mode_fb_cmd2 *mode_cmd,
 			 struct drm_gem_object *obj);
 
 int ast_fbdev_init(struct drm_device *dev);
 void ast_fbdev_fini(struct drm_device *dev);
 void ast_fbdev_set_suspend(struct drm_device *dev, int state);
+void ast_fbdev_set_base(struct ast_private *ast, unsigned long gpu_addr);
 
 struct ast_bo {
 	struct ttm_buffer_object bo;
@@ -367,7 +369,7 @@ static inline int ast_bo_reserve(struct ast_bo *bo, bool no_wait)
 {
 	int ret;
 
-	ret = ttm_bo_reserve(&bo->bo, true, no_wait, false, NULL);
+	ret = ttm_bo_reserve(&bo->bo, true, no_wait, NULL);
 	if (ret) {
 		if (ret != -ERESTARTSYS && ret != -EBUSY)
 			DRM_ERROR("reserve failed %p\n", bo);

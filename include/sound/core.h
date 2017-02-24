@@ -99,6 +99,7 @@ struct snd_card {
 	char driver[16];		/* driver name */
 	char shortname[32];		/* short name of this soundcard */
 	char longname[80];		/* name of this soundcard */
+	char irq_descr[32];		/* Interrupt description */
 	char mixername[80];		/* mixer name */
 	char components[128];		/* card components delimited with
 								space */
@@ -224,16 +225,13 @@ void *snd_lookup_oss_minor_data(unsigned int minor, int type);
 #endif
 
 int snd_minor_info_init(void);
-int snd_minor_info_done(void);
 
 /* sound_oss.c */
 
 #ifdef CONFIG_SND_OSSEMUL
 int snd_minor_info_oss_init(void);
-int snd_minor_info_oss_done(void);
 #else
 static inline int snd_minor_info_oss_init(void) { return 0; }
-static inline int snd_minor_info_oss_done(void) { return 0; }
 #endif
 
 /* memory.c */
@@ -262,7 +260,6 @@ int snd_card_free_when_closed(struct snd_card *card);
 void snd_card_set_id(struct snd_card *card, const char *id);
 int snd_card_register(struct snd_card *card);
 int snd_card_info_init(void);
-int snd_card_info_done(void);
 int snd_card_add_dev_attr(struct snd_card *card,
 			  const struct attribute_group *group);
 int snd_component_add(struct snd_card *card, const char *component);
@@ -311,8 +308,8 @@ __printf(4, 5)
 void __snd_printk(unsigned int level, const char *file, int line,
 		  const char *format, ...);
 #else
-#define __snd_printk(level, file, line, format, args...) \
-	printk(format, ##args)
+#define __snd_printk(level, file, line, format, ...) \
+	printk(format, ##__VA_ARGS__)
 #endif
 
 /**
@@ -322,8 +319,8 @@ void __snd_printk(unsigned int level, const char *file, int line,
  * Works like printk() but prints the file and the line of the caller
  * when configured with CONFIG_SND_VERBOSE_PRINTK.
  */
-#define snd_printk(fmt, args...) \
-	__snd_printk(0, __FILE__, __LINE__, fmt, ##args)
+#define snd_printk(fmt, ...) \
+	__snd_printk(0, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
 
 #ifdef CONFIG_SND_DEBUG
 /**
@@ -333,10 +330,10 @@ void __snd_printk(unsigned int level, const char *file, int line,
  * Works like snd_printk() for debugging purposes.
  * Ignored when CONFIG_SND_DEBUG is not set.
  */
-#define snd_printd(fmt, args...) \
-	__snd_printk(1, __FILE__, __LINE__, fmt, ##args)
-#define _snd_printd(level, fmt, args...) \
-	__snd_printk(level, __FILE__, __LINE__, fmt, ##args)
+#define snd_printd(fmt, ...) \
+	__snd_printk(1, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+#define _snd_printd(level, fmt, ...) \
+	__snd_printk(level, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
 
 /**
  * snd_BUG - give a BUG warning message and stack trace
@@ -386,8 +383,8 @@ static inline bool snd_printd_ratelimit(void) { return false; }
  * Works like snd_printk() for debugging purposes.
  * Ignored when CONFIG_SND_DEBUG_VERBOSE is not set.
  */
-#define snd_printdd(format, args...) \
-	__snd_printk(2, __FILE__, __LINE__, format, ##args)
+#define snd_printdd(format, ...) \
+	__snd_printk(2, __FILE__, __LINE__, format, ##__VA_ARGS__)
 #else
 __printf(1, 2)
 static inline void snd_printdd(const char *format, ...) {}

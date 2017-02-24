@@ -3,6 +3,9 @@
  *
  * This implementation plugs in through generic "usb_bus" level methods,
  * and should work with all USB controllers, regardless of bus type.
+ *
+ * Released under the GPLv2 only.
+ * SPDX-License-Identifier: GPL-2.0
  */
 
 #include <linux/module.h>
@@ -62,15 +65,16 @@ int hcd_buffer_create(struct usb_hcd *hcd)
 	char		name[16];
 	int		i, size;
 
-	if (!hcd->self.controller->dma_mask &&
-	    !(hcd->driver->flags & HCD_LOCAL_MEM))
+	if (!IS_ENABLED(CONFIG_HAS_DMA) ||
+	    (!hcd->self.controller->dma_mask &&
+	     !(hcd->driver->flags & HCD_LOCAL_MEM)))
 		return 0;
 
 	for (i = 0; i < HCD_BUFFER_POOLS; i++) {
 		size = pool_max[i];
 		if (!size)
 			continue;
-		snprintf(name, sizeof name, "buffer-%d", size);
+		snprintf(name, sizeof(name), "buffer-%d", size);
 		hcd->pool[i] = dma_pool_create(name, hcd->self.controller,
 				size, size, 0);
 		if (!hcd->pool[i]) {
@@ -93,8 +97,12 @@ void hcd_buffer_destroy(struct usb_hcd *hcd)
 {
 	int i;
 
+	if (!IS_ENABLED(CONFIG_HAS_DMA))
+		return;
+
 	for (i = 0; i < HCD_BUFFER_POOLS; i++) {
 		struct dma_pool *pool = hcd->pool[i];
+
 		if (pool) {
 			dma_pool_destroy(pool);
 			hcd->pool[i] = NULL;
@@ -117,9 +125,13 @@ void *hcd_buffer_alloc(
 	struct usb_hcd		*hcd = bus_to_hcd(bus);
 	int			i;
 
+	if (size == 0)
+		return NULL;
+
 	/* some USB hosts just use PIO */
-	if (!bus->controller->dma_mask &&
-	    !(hcd->driver->flags & HCD_LOCAL_MEM)) {
+	if (!IS_ENABLED(CONFIG_HAS_DMA) ||
+	    (!bus->controller->dma_mask &&
+	     !(hcd->driver->flags & HCD_LOCAL_MEM))) {
 		*dma = ~(dma_addr_t) 0;
 		return kmalloc(size, mem_flags);
 	}
@@ -144,8 +156,9 @@ void hcd_buffer_free(
 	if (!addr)
 		return;
 
-	if (!bus->controller->dma_mask &&
-	    !(hcd->driver->flags & HCD_LOCAL_MEM)) {
+	if (!IS_ENABLED(CONFIG_HAS_DMA) ||
+	    (!bus->controller->dma_mask &&
+	     !(hcd->driver->flags & HCD_LOCAL_MEM))) {
 		kfree(addr);
 		return;
 	}

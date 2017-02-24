@@ -69,6 +69,7 @@ config AMIGA_Z2RAM
 config GDROM
 	tristate "SEGA Dreamcast GD-ROM drive"
 	depends on SH_DREAMCAST
+	select BLK_SCSI_REQUEST # only for the generic cdrom code
 	help
 	  A standard SEGA Dreamcast comes with a modified CD ROM drive called a
 	  "GD-ROM" by SEGA to signify it is capable of reading special disks
@@ -110,20 +111,11 @@ source "drivers/block/mtip32xx/Kconfig"
 
 source "drivers/block/zram/Kconfig"
 
-config BLK_CPQ_DA
-	tristate "Compaq SMART2 support"
-	depends on PCI && VIRT_TO_BUS && 0
-	help
-	  This is the driver for Compaq Smart Array controllers.  Everyone
-	  using these boards should say Y here.  See the file
-	  <file:Documentation/blockdev/cpqarray.txt> for the current list of
-	  boards supported by this driver, and for further information on the
-	  use of this driver.
-
 config BLK_CPQ_CISS_DA
 	tristate "Compaq Smart Array 5xxx support"
 	depends on PCI
 	select CHECK_SIGNATURE
+	select BLK_SCSI_REQUEST
 	help
 	  This is the driver for Compaq Smart Array 5xxx controllers.
 	  Everyone using these boards should say Y here.
@@ -310,17 +302,6 @@ config BLK_DEV_NBD
 
 	  If unsure, say N.
 
-config BLK_DEV_NVME
-	tristate "NVM Express block device"
-	depends on PCI
-	---help---
-	  The NVM Express driver is for solid state drives directly
-	  connected to the PCI or PCI Express bus.  If you know you
-	  don't have one of these, it is safe to answer N.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called nvme.
-
 config BLK_DEV_SKD
 	tristate "STEC S1120 Block Driver"
 	depends on PCI
@@ -404,21 +385,14 @@ config BLK_DEV_RAM_DAX
 	  and will prevent RAM block device backing store memory from being
 	  allocated from highmem (only a problem for highmem systems).
 
-config BLK_DEV_PMEM
-	tristate "Persistent memory block device support"
-	help
-	  Saying Y here will allow you to use a contiguous range of reserved
-	  memory as one or more persistent block devices.
-
-	  To compile this driver as a module, choose M here: the module will be
-	  called 'pmem'.
-
-	  If unsure, say N.
-
 config CDROM_PKTCDVD
-	tristate "Packet writing on CD/DVD media"
+	tristate "Packet writing on CD/DVD media (DEPRECATED)"
 	depends on !UML
+	select BLK_SCSI_REQUEST
 	help
+	  Note: This driver is deprecated and will be removed from the
+	  kernel in the near future!
+
 	  If you have a CDROM/DVD drive that supports packet writing, say
 	  Y to include support. It should work with any MMC/Mt Fuji
 	  compliant ATAPI or SCSI drive, which is just about any newer
@@ -529,6 +503,16 @@ config VIRTIO_BLK
 	---help---
 	  This is the virtual block driver for virtio.  It can be used with
           lguest or QEMU based VMMs (like KVM or Xen).  Say Y or M.
+
+config VIRTIO_BLK_SCSI
+	bool "SCSI passthrough request for the Virtio block driver"
+	depends on VIRTIO_BLK
+	select BLK_SCSI_REQUEST
+	---help---
+	  Enable support for SCSI passthrough (e.g. the SG_IO ioctl) on
+	  virtio-blk devices.  This is only supported for the legacy
+	  virtio protocol and not enabled by default by any hypervisor.
+	  Your probably want to virtio-scsi instead.
 
 config BLK_DEV_HD
 	bool "Very old hard disk (MFM/RLL/IDE) driver"

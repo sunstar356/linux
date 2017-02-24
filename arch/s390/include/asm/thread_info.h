@@ -7,13 +7,15 @@
 #ifndef _ASM_THREAD_INFO_H
 #define _ASM_THREAD_INFO_H
 
+#include <linux/const.h>
+
 /*
  * Size of kernel stack for each process
  */
-#define THREAD_ORDER 2
+#define THREAD_SIZE_ORDER 2
 #define ASYNC_ORDER  2
 
-#define THREAD_SIZE (PAGE_SIZE << THREAD_ORDER)
+#define THREAD_SIZE (PAGE_SIZE << THREAD_SIZE_ORDER)
 #define ASYNC_SIZE  (PAGE_SIZE << ASYNC_ORDER)
 
 #ifndef __ASSEMBLY__
@@ -28,15 +30,7 @@
  * - if the contents of this structure are changed, the assembly constants must also be changed
  */
 struct thread_info {
-	struct task_struct	*task;		/* main task structure */
 	unsigned long		flags;		/* low level flags */
-	unsigned long		sys_call_table;	/* System call table address */
-	unsigned int		cpu;		/* current CPU */
-	int			preempt_count;	/* 0 => preemptable, <0 => BUG */
-	unsigned int		system_call;
-	__u64			user_timer;
-	__u64			system_timer;
-	unsigned long		last_break;	/* last breaking-event-address. */
 };
 
 /*
@@ -44,24 +38,13 @@ struct thread_info {
  */
 #define INIT_THREAD_INFO(tsk)			\
 {						\
-	.task		= &tsk,			\
 	.flags		= 0,			\
-	.cpu		= 0,			\
-	.preempt_count	= INIT_PREEMPT_COUNT,	\
 }
 
-#define init_thread_info	(init_thread_union.thread_info)
 #define init_stack		(init_thread_union.stack)
 
-/* how to get the thread information struct from C */
-static inline struct thread_info *current_thread_info(void)
-{
-	return (struct thread_info *) S390_lowcore.thread_info;
-}
-
 void arch_release_task_struct(struct task_struct *tsk);
-
-#define THREAD_SIZE_ORDER THREAD_ORDER
+int arch_dup_task_struct(struct task_struct *dst, struct task_struct *src);
 
 #endif
 
@@ -83,17 +66,15 @@ void arch_release_task_struct(struct task_struct *tsk);
 #define TIF_BLOCK_STEP		20	/* This task is block stepped */
 #define TIF_UPROBE_SINGLESTEP	21	/* This task is uprobe single stepped */
 
-#define _TIF_NOTIFY_RESUME	(1<<TIF_NOTIFY_RESUME)
-#define _TIF_SIGPENDING		(1<<TIF_SIGPENDING)
-#define _TIF_NEED_RESCHED	(1<<TIF_NEED_RESCHED)
-#define _TIF_SYSCALL_TRACE	(1<<TIF_SYSCALL_TRACE)
-#define _TIF_SYSCALL_AUDIT	(1<<TIF_SYSCALL_AUDIT)
-#define _TIF_SECCOMP		(1<<TIF_SECCOMP)
-#define _TIF_SYSCALL_TRACEPOINT	(1<<TIF_SYSCALL_TRACEPOINT)
-#define _TIF_UPROBE		(1<<TIF_UPROBE)
-#define _TIF_31BIT		(1<<TIF_31BIT)
-#define _TIF_SINGLE_STEP	(1<<TIF_SINGLE_STEP)
-
-#define is_32bit_task()		(test_thread_flag(TIF_31BIT))
+#define _TIF_NOTIFY_RESUME	_BITUL(TIF_NOTIFY_RESUME)
+#define _TIF_SIGPENDING		_BITUL(TIF_SIGPENDING)
+#define _TIF_NEED_RESCHED	_BITUL(TIF_NEED_RESCHED)
+#define _TIF_SYSCALL_TRACE	_BITUL(TIF_SYSCALL_TRACE)
+#define _TIF_SYSCALL_AUDIT	_BITUL(TIF_SYSCALL_AUDIT)
+#define _TIF_SECCOMP		_BITUL(TIF_SECCOMP)
+#define _TIF_SYSCALL_TRACEPOINT	_BITUL(TIF_SYSCALL_TRACEPOINT)
+#define _TIF_UPROBE		_BITUL(TIF_UPROBE)
+#define _TIF_31BIT		_BITUL(TIF_31BIT)
+#define _TIF_SINGLE_STEP	_BITUL(TIF_SINGLE_STEP)
 
 #endif /* _ASM_THREAD_INFO_H */

@@ -281,7 +281,7 @@ void dev_pm_qos_constraints_destroy(struct device *dev)
 	dev->power.qos = ERR_PTR(-ENODEV);
 	spin_unlock_irq(&dev->power.lock);
 
-	kfree(c->notifiers);
+	kfree(qos->resume_latency.notifiers);
 	kfree(qos);
 
  out:
@@ -856,7 +856,10 @@ int dev_pm_qos_update_user_latency_tolerance(struct device *dev, s32 val)
 		struct dev_pm_qos_request *req;
 
 		if (val < 0) {
-			ret = -EINVAL;
+			if (val == PM_QOS_LATENCY_TOLERANCE_NO_CONSTRAINT)
+				ret = 0;
+			else
+				ret = -EINVAL;
 			goto out;
 		}
 		req = kzalloc(sizeof(*req), GFP_KERNEL);
@@ -883,3 +886,41 @@ int dev_pm_qos_update_user_latency_tolerance(struct device *dev, s32 val)
 	mutex_unlock(&dev_pm_qos_mtx);
 	return ret;
 }
+EXPORT_SYMBOL_GPL(dev_pm_qos_update_user_latency_tolerance);
+
+/**
+ * dev_pm_qos_expose_latency_tolerance - Expose latency tolerance to userspace
+ * @dev: Device whose latency tolerance to expose
+ */
+int dev_pm_qos_expose_latency_tolerance(struct device *dev)
+{
+	int ret;
+
+	if (!dev->power.set_latency_tolerance)
+		return -EINVAL;
+
+	mutex_lock(&dev_pm_qos_sysfs_mtx);
+	ret = pm_qos_sysfs_add_latency_tolerance(dev);
+	mutex_unlock(&dev_pm_qos_sysfs_mtx);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(dev_pm_qos_expose_latency_tolerance);
+
+/**
+ * dev_pm_qos_hide_latency_tolerance - Hide latency tolerance from userspace
+ * @dev: Device whose latency tolerance to hide
+ */
+void dev_pm_qos_hide_latency_tolerance(struct device *dev)
+{
+	mutex_lock(&dev_pm_qos_sysfs_mtx);
+	pm_qos_sysfs_remove_latency_tolerance(dev);
+	mutex_unlock(&dev_pm_qos_sysfs_mtx);
+
+	/* Remove the request from user space now */
+	pm_runtime_get_sync(dev);
+	dev_pm_qos_update_user_latency_tolerance(dev,
+		PM_QOS_LATENCY_TOLERANCE_NO_CONSTRAINT);
+	pm_runtime_put(dev);
+}
+EXPORT_SYMBOL_GPL(dev_pm_qos_hide_latency_tolerance);

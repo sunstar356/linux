@@ -8,7 +8,7 @@
 #include <linux/fs_struct.h>
 #include <linux/fsnotify.h>
 #include <linux/personality.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include "internal.h"
 #include "mount.h"
 
@@ -228,7 +228,7 @@ long do_handle_open(int mountdirfd,
 		path_put(&path);
 		return fd;
 	}
-	file = file_open_root(path.dentry, path.mnt, "", open_flag);
+	file = file_open_root(path.dentry, path.mnt, "", open_flag, 0);
 	if (IS_ERR(file)) {
 		put_unused_fd(fd);
 		retval =  PTR_ERR(file);

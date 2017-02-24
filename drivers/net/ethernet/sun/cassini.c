@@ -99,7 +99,7 @@
 #include <linux/atomic.h>
 #include <asm/io.h>
 #include <asm/byteorder.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 #define cas_page_map(x)      kmap_atomic((x))
 #define cas_page_unmap(x)    kunmap_atomic((x))
@@ -3058,7 +3058,6 @@ static void cas_init_mac(struct cas *cp)
 	/* setup core arbitration weight register */
 	writel(CAWR_RR_DIS, cp->regs + REG_CAWR);
 
-	/* XXX Use pci_dma_burst_advice() */
 #if !defined(CONFIG_SPARC64) && !defined(CONFIG_ALPHA)
 	/* set the infinite burst register for chips that don't have
 	 * pci issues.
@@ -3864,9 +3863,6 @@ static int cas_change_mtu(struct net_device *dev, int new_mtu)
 {
 	struct cas *cp = netdev_priv(dev);
 
-	if (new_mtu < CAS_MIN_MTU || new_mtu > CAS_MAX_MTU)
-		return -EINVAL;
-
 	dev->mtu = new_mtu;
 	if (!netif_running(dev) || !netif_device_present(dev))
 		return 0;
@@ -4530,9 +4526,6 @@ static void cas_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *info
 	strlcpy(info->driver, DRV_MODULE_NAME, sizeof(info->driver));
 	strlcpy(info->version, DRV_MODULE_VERSION, sizeof(info->version));
 	strlcpy(info->bus_info, pci_name(cp->pdev), sizeof(info->bus_info));
-	info->regdump_len = cp->casreg_len < CAS_MAX_REGS ?
-		cp->casreg_len : CAS_MAX_REGS;
-	info->n_stats = CAS_NUM_STAT_KEYS;
 }
 
 static int cas_get_settings(struct net_device *dev, struct ethtool_cmd *cmd)
@@ -5118,6 +5111,10 @@ static int cas_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	if (pci_using_dac)
 		dev->features |= NETIF_F_HIGHDMA;
+
+	/* MTU range: 60 - varies or 9000 */
+	dev->min_mtu = CAS_MIN_MTU;
+	dev->max_mtu = CAS_MAX_MTU;
 
 	if (register_netdev(dev)) {
 		dev_err(&pdev->dev, "Cannot register net device, aborting\n");
